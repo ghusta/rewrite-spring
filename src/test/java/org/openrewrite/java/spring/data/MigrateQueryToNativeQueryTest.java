@@ -28,15 +28,19 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
+        // To be able to compile the before code block in tests, spring-data-jpa-3.4 is added
+        // to src/test/resources/META-INF/rewrite/classpath
+        // See: https://docs.openrewrite.org/authoring-recipes/recipe-testing#specifying-the-classpath-for-dependencies
+        // See also: https://docs.openrewrite.org/authoring-recipes/multiple-versions
         spec.recipe(new MigrateQueryToNativeQuery())
           .parser(JavaParser.fromJavaVersion()
 //            .classpath("spring-data-jpa", "spring-data-commons"));
-            .classpathFromResources(new InMemoryExecutionContext(), "spring-data-jpa", "spring-data-commons"));
+            .classpathFromResources(new InMemoryExecutionContext(), "spring-data-jpa-3.4.+"));
     }
 
     @DocumentExample
     @Test
-    void queryWithNativeEqualsTrue() {
+    void nativeQueryToBeMigrated() {
         rewriteRun(
           //language=java
           java(
@@ -63,7 +67,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
     }
 
     @Test
-    void queryWithNativeEqualsTrueUsingValueArg() {
+    void nativeQueryUsingValueArg() {
         rewriteRun(
           //language=java
           java(
@@ -90,7 +94,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
     }
 
     @Test
-    void queryWithNativeEqualsTrueWithShuffledArgs() {
+    void nativeQueryWithShuffledArgs() {
         rewriteRun(
           //language=java
           java(
@@ -117,7 +121,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
     }
 
     @Test
-    void queryWithNativeEqualsFalse() {
+    void nonNativeQuery() {
         rewriteRun(
           //language=java
           java(
@@ -126,7 +130,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @Query("select * from foo", nativeQuery = false)
+                  @Query("select * from Foo", nativeQuery = false)
                   void customQuery();
               }
               """
@@ -135,7 +139,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
     }
 
     @Test
-    void queryWithNativeUnspecified() {
+    void nonNativeQueryUsingDefaultNativeQueryValue() {
         rewriteRun(
           //language=java
           java(
@@ -144,7 +148,25 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @Query("select * from foo")
+                  @Query("select * from Foo")
+                  void customQuery();
+              }
+              """
+          )
+        );
+    }
+
+    @Test
+    void noChangeWhenAlreadyUsingNativeQuery() {
+        rewriteRun(
+          //language=java
+          java(
+            """
+              import org.springframework.data.jpa.repository.NativeQuery;
+
+              interface Test {
+
+                  @NativeQuery("select * from foo")
                   void customQuery();
               }
               """
