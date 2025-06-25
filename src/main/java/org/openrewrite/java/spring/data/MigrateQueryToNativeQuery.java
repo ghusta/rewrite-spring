@@ -15,13 +15,11 @@
  */
 package org.openrewrite.java.spring.data;
 
-import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Preconditions;
 import org.openrewrite.Recipe;
 import org.openrewrite.TreeVisitor;
-import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.AnnotationMatcher;
 import org.openrewrite.java.ChangeType;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -45,8 +43,6 @@ public class MigrateQueryToNativeQuery extends Recipe {
 
     private static final boolean NATIVE_QUERY_DEFAULT_VALUE = false;
 
-    private final boolean modeDebug = true;
-
     @Override
     public String getDisplayName() {
         // language=markdown
@@ -67,6 +63,7 @@ public class MigrateQueryToNativeQuery extends Recipe {
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
+        // Inspiration for this recipe found in org.openrewrite.java.spring.NoRequestMappingAnnotation
         return Preconditions.check(new UsesType<>(DATA_JPA_QUERY_FQN, false),
                 new JavaIsoVisitor<ExecutionContext>() {
 
@@ -74,38 +71,28 @@ public class MigrateQueryToNativeQuery extends Recipe {
                     public J.Annotation visitAnnotation(J.Annotation annotation, ExecutionContext ctx) {
                         J.Annotation a = super.visitAnnotation(annotation, ctx);
                         if (DATA_JPA_QUERY_ANNOTATION_MATCHER.matches(a) && getCursor().getParentOrThrow().getValue() instanceof J.MethodDeclaration) {
-
-                            // TODO: look at recipe org.openrewrite.java.spring.NoRequestMappingAnnotation
-                            if (modeDebug && a.getArguments() != null) {
-                                a.getArguments().forEach(argument -> System.out.println("Found annotation arg. '" + argument + "'"));
-                            }
-
                             Optional<J.Assignment> nativeQueryArg = findNativeQueryArgument(a);
-                            if (modeDebug) {
-                                nativeQueryArg.ifPresent(assignment -> System.out.println("Found 'nativeQuery' with value = " + findBooleanValue(assignment)));
-                            }
-                            boolean nativeQueryValue = nativeQueryArg.map(assignment -> findBooleanValue(assignment))
+                            boolean isNativeQuery = nativeQueryArg
+                                    .map(assignment -> extractBooleanValue(assignment))
                                     .orElse(NATIVE_QUERY_DEFAULT_VALUE);
-                            if (!nativeQueryValue) {
+                            if (!isNativeQuery) {
                                 return a;
                             } else {
                                 maybeRemoveImport(DATA_JPA_QUERY_FQN);
 
-                                // Remove the argument (nativeQuery)
-                                List<Expression> mappedArgs = ListUtils.map(a.getArguments(),
-                                        arg -> nativeQueryArg.get().equals(arg) ? null : arg);
-
-                                if (modeDebug) {
-                                    List<Expression> filteredArgs = a.getArguments().stream()
+                                // Remove the argument nativeQuery
+                                List<Expression> retainedArgs;
+                                if (nativeQueryArg.isPresent()) {
+                                    retainedArgs = a.getArguments().stream()
                                             .filter(arg -> !nativeQueryArg.get().equals(arg))
                                             .collect(Collectors.toList());
-                                    if (mappedArgs.size() == filteredArgs.size()) {
-                                        System.out.println("Same size mappedArgs // filteredArgs");
-                                    }
+                                } else {
+                                    retainedArgs = a.getArguments();
                                 }
 
-                                a = a.withArguments(mappedArgs);
+                                a = a.withArguments(retainedArgs);
                             }
+                            // If annotation contains single parameter named "value", shorthand style not applied here
 
                             // Change the Annotation Type => call recipe ChangeType
                             maybeAddImport(DATA_JPA_NATIVE_QUERY_FQN);
@@ -128,13 +115,13 @@ public class MigrateQueryToNativeQuery extends Recipe {
                 .findFirst();
     }
 
-    private static @NotNull Predicate<Expression> hasArgumentNativeQuery() {
+    private static Predicate<Expression> hasArgumentNativeQuery() {
         return arg -> arg instanceof J.Assignment &&
                 ((J.Assignment) arg).getVariable() instanceof J.Identifier &&
                 "nativeQuery".equals(((J.Identifier) ((J.Assignment) arg).getVariable()).getSimpleName());
     }
 
-    private @Nullable Boolean findBooleanValue(J.@Nullable Assignment assignment) {
+    private @Nullable Boolean extractBooleanValue(J.@Nullable Assignment assignment) {
         if (assignment == null) {
             return null;
         }
