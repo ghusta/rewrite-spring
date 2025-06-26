@@ -49,7 +49,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @Query("select * from foo", nativeQuery = true)
+                  @Query(value = "select * from foo", nativeQuery = true)
                   void customQuery();
               }
               """,
@@ -58,7 +58,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @NativeQuery("select * from foo")
+                  @NativeQuery(value = "select * from foo")
                   void customQuery();
               }
               """
@@ -130,7 +130,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @Query("select * from Foo", nativeQuery = false)
+                  @Query(value = "select * from Foo", nativeQuery = false)
                   void customQuery();
               }
               """
