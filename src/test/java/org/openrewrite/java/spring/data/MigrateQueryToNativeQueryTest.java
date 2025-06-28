@@ -34,7 +34,6 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
         // See also: https://docs.openrewrite.org/authoring-recipes/multiple-versions
         spec.recipe(new MigrateQueryToNativeQuery())
           .parser(JavaParser.fromJavaVersion()
-//            .classpath("spring-data-jpa", "spring-data-commons"));
             .classpathFromResources(new InMemoryExecutionContext(), "spring-data-jpa-3.4.+"));
     }
 
@@ -58,7 +57,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @NativeQuery(value = "select * from foo")
+                  @NativeQuery("select * from foo")
                   void customQuery();
               }
               """
@@ -85,7 +84,7 @@ class MigrateQueryToNativeQueryTest implements RewriteTest {
 
               interface Test {
 
-                  @NativeQuery(value = "select * from foo")
+                  @NativeQuery("select * from foo")
                   void customQuery();
               }
               """

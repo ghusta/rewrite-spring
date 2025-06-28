@@ -26,6 +26,7 @@ import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.search.UsesType;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.Space;
 
 import java.time.Duration;
 import java.util.List;
@@ -42,6 +43,8 @@ public class MigrateQueryToNativeQuery extends Recipe {
             new AnnotationMatcher("@" + DATA_JPA_QUERY_FQN);
 
     private static final boolean NATIVE_QUERY_DEFAULT_VALUE = false;
+
+    private boolean useShorthandStyleWhenSingleArgumentRemaining = true;
 
     @Override
     public String getDisplayName() {
@@ -92,12 +95,30 @@ public class MigrateQueryToNativeQuery extends Recipe {
 
                                 a = a.withArguments(retainedArgs);
                             }
-                            // If annotation contains single parameter named "value", shorthand style not applied here
 
                             // Change the Annotation Type => call recipe ChangeType
                             maybeAddImport(DATA_JPA_NATIVE_QUERY_FQN);
                             a = (J.Annotation) new ChangeType(DATA_JPA_QUERY_FQN, DATA_JPA_NATIVE_QUERY_FQN, false)
                                     .getVisitor().visit(a, ctx, getCursor().getParentOrThrow());
+
+                            if (useShorthandStyleWhenSingleArgumentRemaining) {
+                                // Apply shorthand style if there is only one remaining argument named "value"
+                                if (a != null && a.getArguments() != null && a.getArguments().size() == 1) {
+                                    a = a.withArguments(
+                                            a.getArguments().stream()
+                                                    .map(arg -> {
+                                                        if (arg instanceof J.Assignment && ((J.Assignment) arg).getVariable() instanceof J.Identifier) {
+                                                            J.Identifier ident = (J.Identifier) ((J.Assignment) arg).getVariable();
+                                                            if ("value".equals(ident.getSimpleName())) {
+                                                                return ((J.Assignment) arg).getAssignment().withPrefix(Space.EMPTY);
+                                                            }
+                                                        }
+                                                        return arg;
+                                                    })
+                                                    .collect(Collectors.toList())
+                                    );
+                                }
+                            }
                         }
                         return a != null ? a : annotation;
                     }
