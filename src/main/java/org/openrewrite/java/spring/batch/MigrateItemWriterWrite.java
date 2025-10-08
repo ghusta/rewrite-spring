@@ -67,7 +67,7 @@ public class MigrateItemWriterWrite extends Recipe {
         return Preconditions.check(
                 Preconditions.or(
                         new DeclaresMethod<>(ITEM_WRITER_WRITE_MATCHER),
-                        new UsesMethod<>("org.springframework.batch.item.ItemWriter write(java.util.List)", true)),
+                        new UsesMethod<>(ITEM_WRITER_WRITE_MATCHER)),
                 new JavaIsoVisitor<ExecutionContext>() {
 
                     @Override
@@ -168,16 +168,18 @@ public class MigrateItemWriterWrite extends Recipe {
                         }
 
                         // Create a new expression: new Chunk<>(<arg>)
-                        JavaTemplate wrap = JavaTemplate.builder("new Chunk<>(#{any()} )")
+                        JavaTemplate argTemplate = JavaTemplate.builder("new Chunk<>(#{any()})")
+                                .contextSensitive()
                                 .imports(CHUNK_FQN)
                                 .build();
 
-                        Expression wrapped = wrap.apply(getCursor(),
-                                mi.getCoordinates().replaceArguments(),
-                                mi.getArguments().get(0));
+                        Expression newArg = argTemplate.apply(getCursor(),
+                                mi.getCoordinates().replace(),
+                                mi.getArguments().get(0))
+                                .withPrefix(Space.EMPTY);
 
                         maybeAddImport(CHUNK_FQN);
-                        return mi.withArguments(Collections.singletonList(wrapped));
+                        return mi.withArguments(Collections.singletonList(newArg));
                     }
 
                 });
