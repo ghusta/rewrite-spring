@@ -16,29 +16,17 @@
 package org.openrewrite.java.spring.batch;
 
 import org.jspecify.annotations.Nullable;
-import org.openrewrite.ExecutionContext;
-import org.openrewrite.Preconditions;
-import org.openrewrite.Recipe;
-import org.openrewrite.Tree;
-import org.openrewrite.TreeVisitor;
+import org.openrewrite.*;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.MethodMatcher;
 import org.openrewrite.java.search.DeclaresMethod;
-import org.openrewrite.java.search.UsesMethod;
 import org.openrewrite.java.service.AnnotationService;
-import org.openrewrite.java.tree.Expression;
-import org.openrewrite.java.tree.J;
-import org.openrewrite.java.tree.JContainer;
-import org.openrewrite.java.tree.JRightPadded;
-import org.openrewrite.java.tree.JavaType;
-import org.openrewrite.java.tree.Space;
-import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.java.tree.*;
 import org.openrewrite.marker.Markers;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -57,135 +45,76 @@ public class MigrateItemWriterWrite extends Recipe {
         return "In `ItemWriter` the signature of the `write()` method has changed in spring-batch 5.x.";
     }
 
-    private static final MethodMatcher ITEM_WRITER_WRITE_MATCHER = new MethodMatcher("org.springframework.batch.item.ItemWriter write(java.util.List)", true);
-
-    private static final String ITERABLE_FQN = "java.lang.Iterable";
-    private static final String CHUNK_FQN = "org.springframework.batch.item.Chunk";
+    private static final MethodMatcher ITEM_WRITER_MATCHER = new MethodMatcher("org.springframework.batch.item.ItemWriter write(java.util.List)", true);
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
-        return Preconditions.check(
-                Preconditions.or(
-                        new DeclaresMethod<>(ITEM_WRITER_WRITE_MATCHER),
-                        new UsesMethod<>(ITEM_WRITER_WRITE_MATCHER)),
-                new JavaIsoVisitor<ExecutionContext>() {
+        return Preconditions.check(new DeclaresMethod<>(ITEM_WRITER_MATCHER), new JavaIsoVisitor<ExecutionContext>() {
 
-                    @Override
-                    public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                        J.MethodDeclaration m = super.visitMethodDeclaration(method, ctx);
+            @Override
+            public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
+                J.MethodDeclaration m = super.visitMethodDeclaration(method, ctx);
 
-                        if (!ITEM_WRITER_WRITE_MATCHER.matches(method.getMethodType())) {
-                            return m;
-                        }
+                if (!ITEM_WRITER_MATCHER.matches(method.getMethodType())) {
+                    return m;
+                }
 
-                        J.VariableDeclarations parameter = (J.VariableDeclarations) m.getParameters().get(0);
-                        if (!(parameter.getTypeExpression() instanceof J.ParameterizedType) ||
-                                ((J.ParameterizedType) parameter.getTypeExpression()).getTypeParameters() == null) {
-                            return m;
-                        }
-                        String chunkTypeParameter = ((J.ParameterizedType) parameter.getTypeExpression()).getTypeParameters().get(0).toString();
-                        String paramName = parameter.getVariables().get(0).getSimpleName();
+                J.VariableDeclarations parameter = (J.VariableDeclarations) m.getParameters().get(0);
+                if (!(parameter.getTypeExpression() instanceof J.ParameterizedType) ||
+                        ((J.ParameterizedType) parameter.getTypeExpression()).getTypeParameters() == null) {
+                    return m;
+                }
+                String chunkTypeParameter = ((J.ParameterizedType) parameter.getTypeExpression()).getTypeParameters().get(0).toString();
+                String paramName = parameter.getVariables().get(0).getSimpleName();
 
-                        // @Override may or may not already be present
+                // @Override may or may not already be present
 
-                        String annotationsWithOverride = Stream.concat(
-                                        service(AnnotationService.class)
-                                                .getAllAnnotations(getCursor()).stream()
-                                                .map(it -> it.print(getCursor())),
-                                        Stream.of("@Override"))
-                                .distinct()
-                                .collect(joining("\n"));
+                String annotationsWithOverride = Stream.concat(
+                                service(AnnotationService.class)
+                                        .getAllAnnotations(getCursor()).stream()
+                                        .map(it -> it.print(getCursor())),
+                                Stream.of("@Override"))
+                        .distinct()
+                        .collect(joining("\n"));
 
-                        m = new UpdateListMethodInvocations(paramName).visitMethodDeclaration(m, ctx);
-                        updateCursor(m);
+                m = new UpdateListMethodInvocations(paramName).visitMethodDeclaration(m, ctx);
+                updateCursor(m);
 
-                        // Should be able to replace just the parameters and have usages of those parameters get their types
-                        // updated automatically. Since parameters usages do not have their type updated, must replace the whole
-                        // method to ensure that type info is accurate / List import can potentially be removed
-                        // See: https://github.com/openrewrite/rewrite/issues/2819
+                // Should be able to replace just the parameters and have usages of those parameters get their types
+                // updated automatically. Since parameters usages do not have their type updated, must replace the whole
+                // method to ensure that type info is accurate / List import can potentially be removed
+                // See: https://github.com/openrewrite/rewrite/issues/2819
 
-                        m = JavaTemplate.builder("#{}\n #{} void write(#{} Chunk<#{}> #{}) throws Exception #{}")
-                                .contextSensitive()
-                                .javaParser(JavaParser.fromJavaVersion()
-                                        .classpathFromResources(ctx, "spring-batch-core-5.1.+", "spring-batch-infrastructure-5.1.+"))
-                                .imports(CHUNK_FQN)
-                                .build()
-                                .apply(
-                                        getCursor(),
-                                        m.getCoordinates().replace(),
-                                        annotationsWithOverride,
-                                        m.getModifiers().stream()
-                                                .map(J.Modifier::toString)
-                                                .collect(joining(" ")),
-                                        parameter.getModifiers().stream()
-                                                .map(J.Modifier::toString)
-                                                .collect(joining(" ")),
-                                        chunkTypeParameter,
-                                        paramName,
-                                        m.getBody() == null ? ";" : m.getBody().print(getCursor()));
+                m = JavaTemplate.builder("#{}\n #{} void write(#{} Chunk<#{}> #{}) throws Exception #{}")
+                        .contextSensitive()
+                        .javaParser(JavaParser.fromJavaVersion()
+                                .classpathFromResources(ctx, "spring-batch-core-5.1.+", "spring-batch-infrastructure-5.1.+"))
+                        .imports("org.springframework.batch.item.Chunk")
+                        .build()
+                        .apply(
+                                getCursor(),
+                                m.getCoordinates().replace(),
+                                annotationsWithOverride,
+                                m.getModifiers().stream()
+                                        .map(J.Modifier::toString)
+                                        .collect(joining(" ")),
+                                parameter.getModifiers().stream()
+                                        .map(J.Modifier::toString)
+                                        .collect(joining(" ")),
+                                chunkTypeParameter,
+                                paramName,
+                                m.getBody() == null ? ";" : m.getBody().print(getCursor()));
 
-                        maybeAddImport("org.springframework.batch.item.Chunk");
-                        maybeRemoveImport("java.util.List");
+                maybeAddImport("org.springframework.batch.item.Chunk");
+                maybeRemoveImport("java.util.List");
 
-                        return m;
-                    }
-
-                    @Override
-                    public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
-                        J.MethodInvocation mi = super.visitMethodInvocation(method, ctx);
-
-                        if (!ITEM_WRITER_WRITE_MATCHER.matches(method.getMethodType())) {
-                            return mi;
-                        }
-
-                        // Handle invocations of write(...) where callers are passing a List literal/variable
-                        // If an invocation passes a java.util.List and the callee expects Chunk, callers may need to wrap it.
-                        // We make a conservative change: if the argument's static type is java.util.List, wrap it with new Chunk<>(arg)
-                        if (mi.getArguments().size() != 1) {
-                            return mi;
-                        }
-
-                        Expression arg = mi.getArguments().get(0);
-                        if (arg == null || arg.getType() == null) {
-                            return mi;
-                        }
-
-                        JavaType argType = arg.getType();
-                        boolean argIsList = false;
-                        if (argType instanceof JavaType.Parameterized) {
-                            JavaType.Parameterized p = (JavaType.Parameterized) argType;
-                            if (p.getType() instanceof JavaType.FullyQualified) {
-                                JavaType.FullyQualified fq = p.getType();
-                                argIsList = "java.util.List".equals(fq.getFullyQualifiedName());
-                            }
-                        } else if (argType instanceof JavaType.FullyQualified) {
-                            JavaType.FullyQualified fq = (JavaType.FullyQualified) argType;
-                            argIsList = "java.util.List".equals(fq.getFullyQualifiedName());
-                        }
-
-                        if (!argIsList) {
-                            return mi;
-                        }
-
-                        // Create a new expression: new Chunk<>(<arg>)
-                        JavaTemplate argTemplate = JavaTemplate.builder("new Chunk<>(#{any()})")
-                                .contextSensitive()
-                                .imports(CHUNK_FQN)
-                                .build();
-
-                        Expression newArg = argTemplate.apply(getCursor(),
-                                mi.getCoordinates().replace(),
-                                mi.getArguments().get(0))
-                                .withPrefix(Space.EMPTY);
-
-                        maybeAddImport(CHUNK_FQN);
-                        return mi.withArguments(Collections.singletonList(newArg));
-                    }
-
-                });
+                return m;
+            }
+        });
     }
 
     private static class UpdateListMethodInvocations extends JavaIsoVisitor<ExecutionContext> {
+        private static final String ITERABLE_FQN = "java.lang.Iterable";
         private static final String GET_ITEMS_METHOD = "getItems";
         private final String parameterName;
 
@@ -205,7 +134,7 @@ public class MigrateItemWriterWrite extends Recipe {
                 mi = mi.withSelect(newGetItemsMethodInvocation(mi.getPadding().getSelect()));
 
             }
-            if (!ITEM_WRITER_WRITE_MATCHER.matches(mi) && mi.getMethodType() != null) {
+            if (!ITEM_WRITER_MATCHER.matches(mi) && mi.getMethodType() != null) {
                 List<JavaType> parameterTypes = mi.getMethodType().getParameterTypes();
                 mi = mi.withArguments(ListUtils.map(mi.getArguments(), (i, e) -> {
                     if (isParameter(e)) {
