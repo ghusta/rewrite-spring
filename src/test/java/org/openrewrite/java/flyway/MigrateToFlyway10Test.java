@@ -284,4 +284,82 @@ class MigrateToFlyway10Test implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void modulePostgresDatabaseAlreadyPresent() {
+        rewriteRun(
+          //language=xml
+          pomXml(
+            """
+              <project>
+              	<modelVersion>4.0.0</modelVersion>
+              	<parent>
+              		<groupId>org.springframework.boot</groupId>
+              		<artifactId>spring-boot-starter-parent</artifactId>
+              		<version>3.3.12</version>
+              		<relativePath/>
+              	</parent>
+              	<groupId>com.example</groupId>
+              	<artifactId>demo</artifactId>
+              	<version>0.0.1-SNAPSHOT</version>
+              	<dependencies>
+              		<dependency>
+              			<groupId>org.flywaydb</groupId>
+              			<artifactId>flyway-core</artifactId>
+              		</dependency>
+              		<dependency>
+              			<groupId>org.flywaydb</groupId>
+              			<artifactId>flyway-database-postgresql</artifactId>
+              		</dependency>
+              		<dependency>
+              			<groupId>org.postgresql</groupId>
+              			<artifactId>postgresql</artifactId>
+              			<scope>runtime</scope>
+              		</dependency>
+              	</dependencies>
+              </project>
+              """
+          )
+        );
+    }
+
+    @Test
+    void modulePostgresDatabaseAlreadyPresentWithScopeRuntime() {
+        rewriteRun(
+          //language=xml
+          pomXml(
+            """
+              <project>
+              	<modelVersion>4.0.0</modelVersion>
+              	<parent>
+              		<groupId>org.springframework.boot</groupId>
+              		<artifactId>spring-boot-starter-parent</artifactId>
+              		<version>3.3.12</version>
+              		<relativePath/>
+              	</parent>
+              	<groupId>com.example</groupId>
+              	<artifactId>demo</artifactId>
+              	<version>0.0.1-SNAPSHOT</version>
+              	<dependencies>
+              		<dependency>
+              			<groupId>org.flywaydb</groupId>
+              			<artifactId>flyway-core</artifactId>
+              		</dependency>
+              		<dependency>
+              			<groupId>org.flywaydb</groupId>
+              			<artifactId>flyway-database-postgresql</artifactId>
+              			<scope>runtime</scope>
+              		</dependency>
+              		<dependency>
+              			<groupId>org.postgresql</groupId>
+              			<artifactId>postgresql</artifactId>
+              			<scope>runtime</scope>
+              		</dependency>
+              	</dependencies>
+              </project>
+              """
+          )
+        );
+    }
+
 }
